@@ -93,3 +93,10 @@ void set_head_commit(const char *hash) {
         fclose(f);
     }
 }
+
+const char* normalize_path(const char *path) {
+    if (strncmp(path, "./", 2) == 0) {
+        return path + 2;
+    }
+    return path;
+}

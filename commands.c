@@ -30,8 +30,8 @@ int cmd_init(void) {
     sprintf(commit_dir, "%s/%s", COMMITS_DIR, root.hash);
     create_dir(commit_dir);
 
-    char meta_path[MAX_PATH];
-    sprintf(meta_path, "%s/meta.vcs", commit_dir);
+    char meta_path[MAX_PATH * 2];
+    snprintf(meta_path, sizeof(meta_path), "%s/meta.vcs", commit_dir);
     f = fopen(meta_path, "wb");
     if (f) {
         fwrite(&root, sizeof(CommitMeta), 1, f);
@@ -94,8 +94,9 @@ int cmd_remove(const char *filename) {
         return 1;
     }
 
-    bool exists_on_disk = file_exists(filename);
+    const char *clean_filename = normalize_path(filename);
 
+    bool exists_on_disk = file_exists(filename);
     bool existed_in_head = false;
     char head_hash[MAX_HASH];
     get_head_commit(head_hash);
@@ -107,7 +108,7 @@ int cmd_remove(const char *filename) {
         if (f_pman) {
             IndexEntry p_entry;
             while (fread(&p_entry, sizeof(IndexEntry), 1, f_pman)) {
-                if (strcmp(p_entry.path, filename) == 0) {
+                if (strcmp(p_entry.path, clean_filename) == 0) {
                     existed_in_head = true;
                     break;
                 }
@@ -117,39 +118,62 @@ int cmd_remove(const char *filename) {
     }
 
     if (!exists_on_disk && !existed_in_head) {
-        fprintf(stderr, "Ошибка: Файл '%s' не найден на диске и не отслеживается репозиторием.\n", filename);
+        fprintf(stderr, "Ошибка: Файл '%s' не найден на диске и не отслеживается репозиторием.\n", clean_filename);
         return 1;
     }
 
-    FILE *f = fopen(INDEX_FILE, "r+b");
+    FILE *f = fopen(INDEX_FILE, "rb");
     if (!f) f = fopen(INDEX_FILE, "wb");
     
-    IndexEntry entry;
-    bool found = false;
-    long pos = 0;
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    int count = size / sizeof(IndexEntry);
+    fseek(f, 0, SEEK_SET);
 
-    while (fread(&entry, sizeof(IndexEntry), 1, f)) {
-        if (strcmp(entry.path, filename) == 0) {
-            found = true;
-            pos = ftell(f) - sizeof(IndexEntry);
-            break;
-        }
+    IndexEntry *entries = malloc(size + sizeof(IndexEntry));
+    if (count > 0 && entries) {
+        fread(entries, sizeof(IndexEntry), count, f);
     }
-
-    strcpy(entry.path, filename);
-    strcpy(entry.hash, "00000000");
-    entry.status = FILE_REMOVED;
-
-    if (found) {
-        fseek(f, pos, SEEK_SET);
-    } else {
-        fseek(f, 0, SEEK_END);
-    }
-
-    fwrite(&entry, sizeof(IndexEntry), 1, f);
     fclose(f);
 
-    printf("Файл '%s' помечен на удаление в следующем коммите.\n", filename);
+    if (!existed_in_head) {
+        FILE *f_new = fopen(INDEX_FILE, "wb");
+        if (f_new) {
+            for (int i = 0; i < count; i++) {
+                if (strcmp(entries[i].path, clean_filename) != 0) {
+                    fwrite(&entries[i], sizeof(IndexEntry), 1, f_new);
+                }
+            }
+            fclose(f_new);
+        }
+        free(entries);
+        printf("Файл '%s' убран из стейджинга.\n", clean_filename);
+        return 0;
+    }
+
+    FILE *f_new = fopen(INDEX_FILE, "wb");
+    if (f_new) {
+        bool found = false;
+        for (int i = 0; i < count; i++) {
+            if (strcmp(entries[i].path, clean_filename) == 0) {
+                strcpy(entries[i].hash, "00000000");
+                entries[i].status = FILE_REMOVED;
+                found = true;
+            }
+            fwrite(&entries[i], sizeof(IndexEntry), 1, f_new);
+        }
+        if (!found) {
+            IndexEntry rem_entry;
+            strcpy(rem_entry.path, clean_filename);
+            strcpy(rem_entry.hash, "00000000");
+            rem_entry.status = FILE_REMOVED;
+            fwrite(&rem_entry, sizeof(IndexEntry), 1, f_new);
+        }
+        fclose(f_new);
+    }
+
+    free(entries);
+    printf("Файл '%s' помечен на удаление в следующем коммите.\n", clean_filename);
     return 0;
 }
 
@@ -190,8 +214,8 @@ int cmd_commit(const char *message) {
     sprintf(commit_dir, "%s/%s", COMMITS_DIR, new_commit.hash);
     create_dir(commit_dir);
 
-    char manifest_path[MAX_PATH];
-    sprintf(manifest_path, "%s/manifest.vcs", commit_dir);
+    char manifest_path[MAX_PATH * 2];
+    snprintf(manifest_path, sizeof(manifest_path), "%s/manifest.vcs", commit_dir);
     FILE *f_man = fopen(manifest_path, "wb");
 
     if (strcmp(head_hash, "00000000") != 0 && strcmp(head_hash, "-") != 0) {
@@ -218,8 +242,8 @@ int cmd_commit(const char *message) {
 
     for (int i = 0; i < index_count; i++) {
         if (index_entries[i].status != FILE_REMOVED) {
-            char store_path[MAX_PATH];
-            sprintf(store_path, "%s/%s", commit_dir, index_entries[i].path);
+            char store_path[MAX_PATH * 2];
+            snprintf(store_path, sizeof(store_path), "%s/%s", commit_dir, index_entries[i].path);
             
             copy_file(index_entries[i].path, store_path);
 
@@ -232,8 +256,8 @@ int cmd_commit(const char *message) {
     }
     fclose(f_man);
 
-    char meta_path[MAX_PATH];
-    sprintf(meta_path, "%s/meta.vcs", commit_dir);
+    char meta_path[MAX_PATH * 2];
+    snprintf(meta_path, sizeof(meta_path), "%s/meta.vcs", commit_dir);
     FILE *f_meta = fopen(meta_path, "wb");
     if (f_meta) {
         fwrite(&new_commit, sizeof(CommitMeta), 1, f_meta);
@@ -356,6 +380,7 @@ int cmd_status(void) {
     fclose(f);
     return 0;
 }
+
 
 int cmd_diff(const char *commit_hash) {
     if (!dir_exists(VCS_DIR)) return 1;

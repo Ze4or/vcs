@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c99 -g
+CFLAGS = -std=c99 -g
 TARGET = vcs
 OBJ = main.o commands.o utils.o
 

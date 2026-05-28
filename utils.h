@@ -11,5 +11,6 @@ void create_parent_dirs(const char *file_path);
 void copy_file(const char *src, const char *dst);
 void get_head_commit(char *output_hash);
 void set_head_commit(const char *hash);
+const char* normalize_path(const char *path);
 
 #endif
