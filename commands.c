@@ -8,7 +8,7 @@
 int cmd_init(void) {
     if (dir_exists(VCS_DIR)) {
         printf("Репозиторий VCS уже инициализирован в текущей директории.\n");
-        return 0;
+        return 1;
     }
 
     if (create_dir(VCS_DIR) != 0 || create_dir(COMMITS_DIR) != 0) {
@@ -48,6 +48,12 @@ int cmd_add(const char *filename) {
         fprintf(stderr, "Ошибка: Репозиторий не инициализирован. Выполните './vcs init'.\n");
         return 1;
     }
+
+    if (filename[0] == '/' || strstr(filename, "../") == filename || strstr(filename, "..\\") == filename) {
+        fprintf(stderr, "Ошибка: Нельзя добавить внешний файл '%s'. Файл должен находиться внутри репозитория.\n", filename);
+        return 1;
+    }
+
     if (!file_exists(filename)) {
         fprintf(stderr, "Ошибка: Файл '%s' не найден.\n", filename);
         return 1;
@@ -94,6 +100,11 @@ int cmd_remove(const char *filename) {
         return 1;
     }
 
+    if (filename[0] == '/' || strstr(filename, "../") == filename || strstr(filename, "..\\") == filename) {
+        fprintf(stderr, "Ошибка: Путь '%s' ведёт за пределы репозитория.\n", filename);
+        return 1;
+    }
+    
     const char *clean_filename = normalize_path(filename);
 
     bool exists_on_disk = file_exists(filename);
@@ -189,7 +200,7 @@ int cmd_commit(const char *message) {
     if (index_count == 0) {
         printf("Ничего не изменено. Стейджинг пуст.\n");
         fclose(f_idx);
-        return 0;
+        return 1;
     }
     fseek(f_idx, 0, SEEK_SET);
 
