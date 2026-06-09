@@ -1,4 +1,4 @@
-# vcs
-# Простая vcs на языке C
-# make - собрать
-# make clean - очистить
+# VCS
+Простая vcs на языке C
+make - собрать
+make clean - очистить
